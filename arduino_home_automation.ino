@@ -1,3 +1,13 @@
+// Length parameters
+// * name of parameter
+// * value of parameter
+// * overall lenght of the 'GET' type URL
+#define NAMELEN 32
+#define VALUELEN 32
+#define URLLEN 128
+
+#define DEFAULT_TEMPERATURE 24
+
 // Daiseikai IR
 #include <Arduino.h>
 #include <CarrierHeatpumpIR.h>
@@ -8,344 +18,344 @@ DaiseikaiHeatpumpIR *heatpumpIR;
 
 // Ethernet
 #include <SPI.h>
+//#include "avr/pgmspace.h"
 #include <Ethernet.h>
-byte mac[] = {
-  0x74,0x69,0x69,0x2D,0x30,0x31 };  // W5100 MAC address
-IPAddress ip(192,168,2,3);  // Arduino IP
-EthernetClient webclient;
-// Initialize the Ethernet server library
-// with the IP address and port you want to use 
-// (port 80 is default for HTTP):
-EthernetServer server(80);
-String httpRequest;
+#include <WebServer.h>
+static uint8_t mac[] = {
+  0x74, 0x69, 0x69, 0x2D, 0x30, 0x31 };  // W5100 MAC address
+static uint8_t ip[] = { 
+  192, 168, 2, 3 };  // Arduino IP
+/* This creates an instance of the webserver.  By specifying a prefix
+ * of "", all pages will be at the root of the server. */
+#define PREFIX ""
+WebServer webserver(PREFIX, 9093);
 
-//#include <SD.h>
+// flash-based web pages to save precious RAM
+P(indexpage) = "<!DOCTYPE html>\n"
+"<html>\n"
+"<body>\n"
+"\n"
+"\n"
+"<table border=\"1\">\n"
+"<tr><td>\n"
+"AC Control\n"
+"<form name=\"input\" action=\"send_ir.html\" method=\"get\">\n"
+"<table border=\"1\">\n"
+"<tr><td>\n"
+"<input type=\"radio\" name=\"power\" value=\"1\">ON\n"
+"<input type=\"radio\" name=\"power\" value=\"0\" checked>OFF\n"
+"</td><td>\n"
+"Power state\n"
+"</td></tr>\n"
+"\n"
+"<tr><td>\n"
+"<select name=\"mode\">\n"
+"  <option value=\"1\">AUTO</option>\n"
+"  <option value=\"2\" selected=\"selected\">HEAT</option>\n"
+"  <option value=\"3\">COOL</option>\n"
+"  <option value=\"4\">DRY</option>\n"
+"  <option value=\"5\">FAN</option>\n"
+"</select> \n"
+"</td><td>\n"
+"Mode\n"
+"</td></tr>\n"
+"\n"
+"<tr><td>\n"
+"<select name=\"fan\">\n"
+" <option value=\"1\" selected=\"selected\">AUTO</option>\n"
+" <option value=\"2\">1</option>\n"
+" <option value=\"3\">2</option>\n"
+" <option value=\"4\">3</option>\n"
+" <option value=\"5\">4</option>\n"
+" <option value=\"6\">5</option>\n"
+"</select> \n"
+"</td><td>\n"
+"Fan speed\n"
+"</td></tr>\n"
+"\n"
+"<tr><td>\n"
+"<select name=\"temperature\">\n"
+"  <option value=\"16\">16</option>\n"
+"  <option value=\"17\">17</option>\n"
+"  <option value=\"18\">18</option>\n"
+"  <option value=\"19\">19</option>\n"
+"  <option value=\"20\">20</option>\n"
+"  <option value=\"21\">21</option>\n"
+"  <option value=\"22\">22</option>\n"
+"  <option value=\"23\">23</option>\n"
+"  <option value=\"24\" selected=\"selected\">24</option>\n"
+"  <option value=\"25\">25</option>\n"
+"  <option value=\"26\">26</option>\n"
+"  <option value=\"27\">27</option>\n"
+"  <option value=\"28\">28</option>\n"
+"  <option value=\"29\">29</option>\n"
+"  <option value=\"30\">30</option>\n"
+"</select> \n"
+"</td><td>\n"
+"Temperature\n"
+"</td></tr>\n"
+"\n"
+"<tr><td>\n"
+"<select name=\"vswing\">\n"
+"  <option value=\"1\" selected=\"selected\" >AUTO</option>\n"
+"  <option value=\"2\" >UP</option>\n"
+"  <option value=\"3\" >MIDDLE UP</option>\n"
+"  <option value=\"4\" >MIDDLE</option>\n"
+"  <option value=\"5\" >MIDDLE DOWN</option>\n"
+"  <option value=\"6\" >DOWN</option>\n"
+"</select>\n"
+"</td><td>\n"
+"Vertical swing\n"
+"</td></tr>\n"
+"\n"
+"<tr><td>\n"
+"<select name=\"hswing\">\n"
+"  <option value=\"1\" selected=\"selected\">AUTO</option>\n"
+"  <option value=\"2\" >MIDDLE</option>\n"
+"  <option value=\"3\" >LEFT</option>\n"
+"  <option value=\"4\" >LEFT MIDDLE</option>\n"
+"  <option value=\"5\" >RIGHT</option>\n"
+"  <option value=\"6\" >RIGHT MIDDLE</option>\n"
+"</select>\n"
+"</td><td>\n"
+"Horizontal swing\n"
+"</td></tr>\n"
+"\n"
+"</td></tr>\n"
+"</table>\n"
+"<input type=\"submit\" value=\"Submit\">\n"
+"</form>\n"
+"</td></tr>\n"
+"\n"
+"</table>\n"
+"\n"
+"</body>\n"
+"</html>\n";
 
-// HUE
-const char hueHubIP[] = "192.168.2.2";  // Hue hub IP
-const char hueUsername[] = "";  // Hue username
-const int hueHubPort = 80;
-//  Hue variables
-boolean hueOn;  // on/off
-int hueBri;  // brightness value
-long hueHue;  // hue value
-String hueCmd;  // Hue command
+P(formactionpage_header) = "<!DOCTYPE html>"
+"<html>"
+"<body>"
+"<h1>Parameters</h1>";
 
-// DHT
-#include "DHT.h"
-#define DHTPIN 40     // what pin we're connected to
-#define DHTTYPE DHT22   // DHT 22  (AM2302)
-DHT dht(DHTPIN, DHTTYPE);
+P(formactionpage_footer) = ""
+"</body>"
+"</html>";
 
-unsigned long buffer=0;  //buffer for received data storage
-unsigned long addr;
+// The index.html web page. This presents the HTML form
+void indexCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
+{
+  server.httpSuccess();
+  server.printP(indexpage);
+}
 
-// Visuals
-int redLED = 6; // heat
-int orangeLED = 5;  // ir is transmitting
-int greenLED = 4; // on (auto if no other led)
-int blueLED = 3; // cool
+// The send_ir.html. This handles the parameters submitted by the form
+void ACCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
+{
+  URLPARAM_RESULT rc;
+  char name[NAMELEN];
+  char value[VALUELEN];
+  int param = 0;
 
+  // Sensible defaults for the heat pump mode
+
+  byte powerState    = POWER_OFF;
+  byte operatingMode = MODE_AUTO;
+  byte fanSpeed      = FAN_AUTO;
+  byte temperature   = DEFAULT_TEMPERATURE;
+  byte swingV        = VDIR_AUTO;
+  byte swingH        = HDIR_AUTO;
+
+  server.httpSuccess();
+  server.printP(formactionpage_header);
+
+  if (strlen(url_tail))
+    {
+    while (strlen(url_tail))
+      {
+      rc = server.nextURLparam(&url_tail, name, NAMELEN, value, VALUELEN);
+      if (rc != URLPARAM_EOS)
+        {
+          if (strcmp(name, "power") == 0 )
+          {
+            param = atoi(value);
+ 
+            switch (param)
+            {
+              case 0:
+                powerState = POWER_OFF;
+                break;
+              case 1:
+                powerState = POWER_ON;
+                break;
+            }
+          }
+          else if (strcmp(name, "mode") == 0 )
+          {
+            param = atoi(value);
+            
+            switch (param)
+            {
+              case 1:
+                operatingMode = MODE_AUTO;
+                break;
+              case 2:
+                operatingMode = MODE_HEAT;
+                break;
+              case 3:
+                operatingMode = MODE_COOL;
+                break;
+              case 4:
+                operatingMode = MODE_DRY;
+                break;
+              case 5:
+                operatingMode = MODE_FAN;
+                break;
+            }
+          }
+          else if (strcmp(name, "fan") == 0 )
+          {
+            param = atoi(value);
+            
+            switch (param)
+            {
+              case 1:
+                fanSpeed = FAN_AUTO;
+                break;
+              case 2:
+                fanSpeed = FAN_1;
+                break;
+              case 3:
+                fanSpeed = FAN_2;
+                break;
+              case 4:
+                fanSpeed = FAN_3;
+                break;
+              case 5:
+                fanSpeed = FAN_4;
+                break;
+              case 6:
+                fanSpeed = FAN_5;
+                break;
+            }
+          }
+          else if (strcmp(name, "temperature") == 0 )
+          {
+            param = atoi(value);
+            if ( param >= 15 && param <= 31 && temperature == DEFAULT_TEMPERATURE)
+            {
+              temperature = param;
+            }
+          }
+          else if (strcmp(name, "vswing") == 0 )
+          {
+            param = atoi(value);
+        
+            switch (param)
+            {
+              case 1:
+                swingV = VDIR_AUTO;
+                break;
+              case 2:
+                swingV = VDIR_UP;
+                break;
+              case 3:
+                swingV = VDIR_MUP;
+                break;
+              case 4:
+                swingV = VDIR_MIDDLE;
+                break;
+              case 5:
+                swingV = VDIR_MDOWN;
+                break;
+              case 6:
+                swingV = VDIR_DOWN;
+                break;
+            }
+          }
+          else if (strcmp(name, "hswing") == 0 )
+          {
+            param = atoi(value);
+
+            switch (param)
+            {
+              case 1:
+                swingH = HDIR_AUTO;
+                break;
+              case 2:
+                swingH = HDIR_MIDDLE;
+                break;
+              case 3:
+                swingH = HDIR_LEFT;
+                break;
+              case 4:
+                swingH = HDIR_MLEFT;
+                break;
+              case 5:
+                swingH = HDIR_RIGHT;
+                break;
+              case 6:
+                swingH = HDIR_MRIGHT;
+                break;
+            }
+          }          
+        server.print(name);
+        server.print(" = ");
+        server.print(param);
+        server.print("<br>");
+        }
+      }
+    }
+
+  server.printP(formactionpage_footer);
+/*  
+  Serial.println("Values:");
+  Serial.println("Power: ");
+  Serial.println(powerState);
+  Serial.println("Mode: ");
+  Serial.println(operatingMode);
+  Serial.println("Fan: ");
+  Serial.println(fanSpeed);
+  Serial.println("Temp: ");
+  Serial.println(temperature);
+  Serial.println("SwingV: ");
+  Serial.println(swingV);
+  Serial.println("SwingH: ");
+  Serial.println(swingH);
+*/
+  heatpumpIR->send(irSender, powerState, operatingMode, fanSpeed, temperature, swingV, swingH);
+}
+
+// The setup
 void setup()
 {
   Serial.begin(9600);
 
   Ethernet.begin(mac,ip);
-  server.begin();
+  // Setup the default and the index page
+  webserver.setDefaultCommand(&indexCmd);
+  webserver.addCommand("index.html", &indexCmd);
+  // The form handlers
+  webserver.addCommand("send_ir.html", &ACCmd);
+  // start the webserver
+  webserver.begin();
+
   Serial.print("server is at ");
   Serial.println(Ethernet.localIP());
-
-  // initialize SD card
-  /*
-  Serial.println("Initializing SD card...");
-  if (!SD.begin(4)) {
-    Serial.println("ERROR - SD card initialization failed!");
-    return;    // init failed
-  }
-  Serial.println("SUCCESS - SD card initialized.");
-  // check for index.htm file
-  if (!SD.exists("index.htm")) {
-    Serial.println("ERROR - Can't find index.htm file!");
-    return;  // can't find index file
-  }
-  Serial.println("SUCCESS - Found index.htm file.");  
-  */
-
-  dht.begin();
-
-  pinMode(redLED, OUTPUT);
-  pinMode(orangeLED, OUTPUT);
-  pinMode(greenLED, OUTPUT);
-  pinMode(blueLED, OUTPUT);
-  delay(500);
 
   heatpumpIR = new DaiseikaiHeatpumpIR();
 
   Serial.println(F("Starting"));
 }
 
-int freeRam () 
-{
-  extern int __heap_start, *__brkval; 
-  int v; 
-  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
-}
 
-void(* resetFunc) (void) = 0; //declare reset function @ address 0
-
-void parseRequest(String httpRequest) {
-  Serial.println("In parseRequest");
-  Serial.println(httpRequest);
-}
-
-void acControl(int power, int mode, int temp) {
-  const char* buf;
-
-  Serial.print(F("Sending IR to "));
-  // Print the model
-  buf = heatpumpIR->model();
-  // 'model' is a PROGMEM pointer, so need to write a byte at a time
-  while (char modelChar = pgm_read_byte(buf++))
-  {
-    Serial.print(modelChar);
-  }
-  Serial.print(F(", info: "));
-  // Print the info
-  buf = heatpumpIR->info();  
-  // 'info' is a PROGMEM pointer, so need to write a byte at a time
-  while (char infoChar = pgm_read_byte(buf++))
-  {
-    Serial.print(infoChar);
-  }
-  Serial.println();
-
-  digitalWrite(orangeLED,HIGH);
-  digitalWrite(redLED, LOW);
-  delay(50);
-  heatpumpIR->send(irSender, power, mode, FAN_AUTO, temp, VDIR_AUTO, HDIR_AUTO);
-  digitalWrite(orangeLED,LOW);
-  digitalWrite(redLED, HIGH);
-}
-
+// The loop
 void loop()
 {
+  // URL buffer for GET parameters
+  char buff[URLLEN];
+  int len = URLLEN;
 
-  // DHT Initialize
-  float h = dht.readHumidity();
-  float t = dht.readTemperature();
-  // check if returns are valid, if they are NaN (not a number) then something went wrong!
-  if (isnan(t) || isnan(h)) {
-    Serial.println("Failed to read from DHT");
-  }
-
-  // listen for incoming clients
-  EthernetClient client = server.available();
-  if (client) {
-    Serial.println("new client");
-    // an http request ends with a blank line
-    boolean currentLineIsBlank = true;
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
-
-        //read char by char HTTP request
-        if (httpRequest.length() < 100) {
-          //store characters to string
-          httpRequest += c;
-          //Serial.write(c);
-        }
-
-        // if you've gotten to the end of the line (received a newline
-        // character) and the line is blank, the http request has ended,
-        // so you can send a reply
-        if (c == '\n' && currentLineIsBlank) {
-          // send a standard http response header
-          client.println("HTTP/1.1 200 OK");
-          client.println("Content-Type: text/html");
-          client.println("Connection: close");  // the connection will be closed after completion of the response
-          // CAREFULL: YOU COULD BE SENDING IR COMMANDS TO YOUR AC CONSTANTLY
-          //client.println("Refresh: 15");  // refresh the page automatically every 15 sec
-          client.println();
-          client.println("<!DOCTYPE HTML>");
-          client.println("<html>");
-          client.println("<head>");
-          client.println("<title>Peggy</title>");
-          client.println("<link rel='stylesheet' href='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css' integrity='sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u' crossorigin='anonymous'>");
-          client.println("<script src='https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js' integrity='sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa' crossorigin='anonymous'></script>");
-          client.println("</head>");
-          client.println("<body class='container'>");
-          client.println("<div class='row'>");
-          client.println("<div class='col-xs-12'>");
-          client.println("<h1 class='text-center'><a href='/'>Peggy</a></h1>");
-          client.println("<hr>");
-          client.println("</div>");
-/*
-          client.println("<div class='col-xs-12 col-md-6'>");
-          client.println("<h2>AC Control</h2>");
-
-          client.println("<form method=get>");
-          client.print("<input type='radio' name=ac value='1'>On");
-          client.print("<input type='radio' name=ac value='0' checked>Off<br>");
-          client.print("<input type='radio' name=mode value='auto' checked>Auto");
-          client.print("<input type='radio' name=mode value='cool'>Cool");
-          client.print("<input type='radio' name=mode value='heat'>Heat<br>");
-          //         client.print("<input type='radio' name=mode value='fan' checked>Fan<br>");
-          client.print("Set Temperature to: <input type='text' name=temp value='24'><br>");
-          client.print("<input type=submit value=submit>");
-          client.println("</form>");
-
-          client.println("</div>");
-*/          
-          client.println("<div class='col-xs-12 col-md-6'>");
-          client.println("<H2>AC (24&deg;C)</H2>");
-          client.println("<a class='btn btn-block btn-success btn-lg' href='/?acOnAuto'>Auto</a><br>");
-          client.println("<a class='btn btn-block btn-warning btn-lg' href='/?acOff'>Off</a><br>");
-          client.println("<a class='btn btn-block btn-primary' href='/?acOnCool'>Cool</a><br>");
-          client.println("<a class='btn btn-block btn-danger' href='/?acOnHeat'>Heat</a><br>");
-          client.println("</div>");
-          
-          client.println("<div class='col-xs-12 col-md-6'>");
-          client.println("<H2>Lights</H2>");
-          client.println("<a class='btn btn-block btn-info btn-lg' href='/?hueFloorOn'>Floor On</a><br>");
-          client.println("<a class='btn btn-block btn-default btn-lg' href='/?hueFloorOff'>Floor Off</a><br>");
-          client.println("<a class='btn btn-block btn-info' href='/?hueOn'>Ceiling On</a><br>");
-          client.println("<a class='btn btn-block btn-default' href='/?hueOff'>Ceiling Off</a><br>");
-          client.println("</div>");
-          
-          // Reading temperature or humidity takes about 250 milliseconds!
-          // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
-          client.println("<div class='col-xs-12 col-md-4 text-center'>");
-          client.println("<H2>Conditions</H2>");
-          client.print("Room Temperature: <strong>"); 
-          client.print(t,1);
-          client.println("&deg;C</strong>");
-          client.println("<br />");
-          client.print("Room Humidity: <strong>"); 
-          client.print(h,1);
-          client.println("%</strong>");
-          client.println("</div>");
-
-          client.println("<div class='col-xs-12 col-md-4 text-center'>");
-          client.println("<H2>System</H2>");
-          client.print("Available RAM: <strong>");
-          client.print(freeRam());
-          client.println("b</strong><br>");
-          long days=0;
-          long hours=0;
-          long mins=0;
-          long secs=0;
-          secs = millis()/1000; //convect milliseconds to seconds
-          mins=secs/60; //convert seconds to minutes
-          hours=mins/60; //convert minutes to hours
-          days=hours/24; //convert hours to days
-          secs=secs-(mins*60); //subtract the coverted seconds to minutes in order to display 59 secs max
-          mins=mins-(hours*60); //subtract the coverted minutes to hours in order to display 59 minutes max
-          hours=hours-(days*24); //subtract the coverted hours to days in order to display 23 hours max
-          //Display results
-          client.println("Uptime:");
-          if (days>0) // days will be displayed only if value is greater than zero
-          {
-            client.print(days);
-            client.print(" days and :");
-          }
-          if (hours<10) client.print('0');
-          client.print(hours);
-          client.print(":");
-          if (mins<10) client.print('0');
-          client.print(mins);
-          client.print(":");
-          if (secs<10) client.print('0');
-          client.println(secs);
-          client.println("</div>");
-
-
-          client.println("<div class='col-xs-12 col-md-4 text-center'>");
-          client.println("<H2>Network Status</H2>");
-          client.println("Public IP: ");
-          client.println("<iframe src='https://api.ipify.org' height='20' width='100' style='border: none'></iframe>");
-          client.println("<br>");
-          client.println("Private IP: ");
-          client.println(ip);
-          client.println("</div>");
-
-          client.println("<div class='col-xs-12 text-right'><hr>Compiled: ");
-          client.println(__DATE__ ", " __TIME__);
-          client.println("</div>");
-          client.println("</div>");
-          client.println("</body>");
-          client.println("</html>");
-          client.println("</body>");
-          client.println("</html>");
-
-          //controls the Arduino if you press the buttons
-          if (httpRequest.indexOf("?acOnAuto") > 0){
-            digitalWrite(greenLED, HIGH);
-            digitalWrite(blueLED, LOW);
-            digitalWrite(redLED, LOW);
-            digitalWrite(orangeLED,HIGH);
-            delay(50);
-            heatpumpIR->send(irSender, POWER_ON, MODE_AUTO, FAN_AUTO, 24, VDIR_AUTO, HDIR_AUTO);
-            digitalWrite(orangeLED,LOW);
-          }
-
-          if (httpRequest.indexOf("?acOnCool") > 0){
-            digitalWrite(greenLED, HIGH);
-            digitalWrite(blueLED, HIGH);
-            digitalWrite(redLED, LOW);
-            digitalWrite(orangeLED,HIGH);
-            delay(50);
-            heatpumpIR->send(irSender, POWER_ON, MODE_COOL, FAN_AUTO, 24, VDIR_AUTO, HDIR_AUTO);
-            digitalWrite(orangeLED,LOW);
-          }
-
-          if (httpRequest.indexOf("?acOnHeat") > 0){
-            digitalWrite(greenLED, HIGH);
-            digitalWrite(redLED, HIGH);
-            digitalWrite(blueLED, LOW);
-            digitalWrite(orangeLED,HIGH);
-            delay(50);
-            heatpumpIR->send(irSender, POWER_ON, MODE_HEAT, FAN_AUTO, 24, VDIR_AUTO, HDIR_AUTO);
-            digitalWrite(orangeLED,LOW);
-          }
-
-          if (httpRequest.indexOf("?acOff") > 0){
-            digitalWrite(greenLED, LOW);
-            digitalWrite(blueLED, LOW);
-            digitalWrite(redLED, LOW);
-            digitalWrite(orangeLED,HIGH);
-            delay(50);
-            heatpumpIR->send(irSender, POWER_OFF, MODE_AUTO, FAN_AUTO, 24, VDIR_AUTO, HDIR_AUTO);
-            digitalWrite(orangeLED,LOW);
-          }
-
-
-          //clearing string for next read
-          httpRequest="";
-
-          break;
-        }
-        if (c == '\n') {
-          // you're starting a new line
-          currentLineIsBlank = true;
-        } 
-        else if (c != '\r') {
-          // you've gotten a character on the current line
-          currentLineIsBlank = false;
-        }
-      }
-    }
-    // give the web browser time to receive the data
-    delay(1);
-    // close the connection:
-    client.stop();
-    Serial.println("client disonnected");
-
-  } 
+  // process incoming connections one at a time forever
+  webserver.processConnection(buff, &len);
 }
-
-
-
-
-
-
 
