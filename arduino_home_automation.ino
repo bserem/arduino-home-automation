@@ -16,6 +16,12 @@ IRSenderPWM irSender(9);     // IR led on Duemilanove digital pin 3, using Ardui
 
 DaiseikaiHeatpumpIR *heatpumpIR;
 
+// DHT
+#include "DHT.h"
+#define DHTPIN 2     // what pin we're connected to
+#define DHTTYPE DHT22   // DHT 22  (AM2302)
+DHT dht(DHTPIN, DHTTYPE);
+
 // Ethernet
 #include <SPI.h>
 //#include "avr/pgmspace.h"
@@ -34,15 +40,13 @@ static uint8_t ip[] = {
 WebServer webserver(PREFIX, 9093);
 
 // flash-based web pages to save precious RAM
-P(indexpage) = "<!DOCTYPE html>"
-"<html>"
-"  <head>"
-"    <link rel='stylesheet' href='http://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css' integrity='sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u' crossorigin='anonymous'>"
-"  </head>"
-"  <body>"
-"    <div class='container'>"
-"      <div class='row'>"
-"        <h1 class='text-center'>AC Control</h1>"
+P(wrapper_start) = "<div class='container'><div class='row'>";
+P(wrapper_end) = "</div></div>";
+P(page_title_main) = "<h1 class='text-center'>AC Control</h1>";
+P(p_centered_start) = "<p class='col-xs-12 text-center'>";
+P(p_end) = "</div>";
+
+P(page_main) = ""
 "        <div class='col-xs-12'>"
 "          <form name='input' action='send_ir.html' method='get'>"
 "            <input type='hidden' name='power' value='0' checked>"
@@ -120,29 +124,44 @@ P(indexpage) = "<!DOCTYPE html>"
 "              <option value='6' >RIGHT MIDDLE</option>"
 "            </select>"
 "          </form>"
-"        </div>"
-"      </div>"
-"    </div>"
-"  </body>"
-"</html>";
+"        </div>";
 
-P(formactionpage_header) = "<!DOCTYPE html>"
+P(page_command) = "<a href='/' class='btn btn-info btn-block btn-lg'>back to controls</a>";
+
+
+P(page_header) = "<!DOCTYPE html>"
 "<html>"
 "  <head>"
 "    <link rel='stylesheet' href='http://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css' integrity='sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u' crossorigin='anonymous'>"
 "  </head>"
-"<body>"
-"<h1>Parameters</h1>";
+"<body>";
 
-P(formactionpage_footer) = "<a href='/' class='btn btn-info btn-block btn-lg'>back to controls</a>"
-"</body>"
+P(page_footer) = "</body>"
 "</html>";
 
 // The index.html web page. This presents the HTML form
 void indexCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bool tail_complete)
 {
   server.httpSuccess();
-  server.printP(indexpage);
+  server.printP(page_header);
+  server.printP(wrapper_start);
+  server.printP(page_title_main);
+
+  server.printP(p_centered_start);
+  float t = dht.readTemperature();
+  float f = dht.readHumidity();
+  server.print("Room Temperature: ");
+  server.print(t,1);
+  server.print("&deg;C<br>");
+  server.print("Room Humidity: ");
+  server.print(f,1);
+  server.print("%");
+  server.printP(p_end);
+
+  server.printP(page_main);
+
+  server.printP(wrapper_end);
+  server.printP(page_footer);
 }
 
 // The send_ir.html. This handles the parameters submitted by the form
@@ -179,7 +198,8 @@ void ACCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bo
       byte swingH        = HDIR_AUTO;
 
       server.httpSuccess();
-      server.printP(formactionpage_header);
+      server.printP(page_header);
+      server.printP(page_command);
 
       if (strlen(url_tail))
       {
@@ -319,7 +339,8 @@ void ACCmd(WebServer &server, WebServer::ConnectionType type, char *url_tail, bo
         }
       }
 
-      server.printP(formactionpage_footer);
+      server.printP(page_command);
+      server.printP(page_footer);
       /*  
        Serial.println("Values:");
        Serial.println("Power: ");
@@ -362,9 +383,12 @@ void setup()
   Serial.print("server is at ");
   Serial.println(Ethernet.localIP());
 
+  dht.begin();
+  delay(1000);
+
   heatpumpIR = new DaiseikaiHeatpumpIR();
 
-  Serial.println(F("Starting"));
+  Serial.println(F("Running"));
 }
 
 
